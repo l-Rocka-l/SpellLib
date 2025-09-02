@@ -1,4 +1,12 @@
-local spellcore = require('SpellAPI.SpellCore')
+local spellcore
+
+-- Search for and require SpellCore library from all available paths
+for _, path in ipairs(listFiles(nil, true)) do
+    if path:sub(-9) == "SpellCore" then
+        spellcore = require(path)
+    end
+end
+assert(spellcore, "SpellCore not found. You can download it from GitHub")
 
 local spellib = {}
 local hiddenSpells = {}
@@ -7,9 +15,8 @@ local scalings = {}
 local rotatings = {}
 
 
---- Yor spells have to have names (`spellName`).
---- Works only with arrows and tridents
----@param ... string spell names, which vanilla models have to be hidden
+--- Hides the vanilla Minecraft model for arrows and tridents belonging to specified spells.
+---@param ... string Spell names whose vanilla models should be hidden
 function spellib.hide_vanilla_model(...)
     local spellNames = {...}
     for _, name in ipairs(spellNames) do
@@ -17,9 +24,8 @@ function spellib.hide_vanilla_model(...)
     end
 end
 
---- Yor spells have to have names (`spellName`).
---- Works only with arrows and tridents
----@param ... string spell names, which vanilla models have to be shown
+--- Shows the vanilla Minecraft model for arrows and tridents belonging to specified spells.
+---@param ... string Spell names whose vanilla models should be shown
 function spellib.show_vanilla_model(...)
     local spellNames = {...}
     for _, name in ipairs(spellNames) do
@@ -27,8 +33,13 @@ function spellib.show_vanilla_model(...)
     end
 end
 
---------------- Things for render functions ------------------------------
+--------------- Render Utilities ------------------------------
 
+--- Makes a model follow a projectile's position and rotation. Must be called continuously in render events.
+---@param projectile table Projectile object to follow
+---@param model model Model to position
+---@param delta number Delta time from render event (0 to 1 indicating time between ticks)
+---@param follow table Optional table with pos and rot multipliers. Set vector components to 0 to ignore following on that axis.
 function spellib.follow(projectile, model, delta, follow)
     local follow = follow or {
         pos = vec(1, 1, 1),
@@ -39,6 +50,13 @@ function spellib.follow(projectile, model, delta, follow)
     model:setPos(projectile:getLastPos(delta)*follow.pos*16)
     model:setRot(newRot.x, 180+newRot.y, 0)
 end
+
+--- Executes a function at regular intervals along a projectile's path. Must be called continuously in render events.
+---@param func function Function to execute (receives projectile, position, delta)
+---@param projectile table Projectile object to track
+---@param distance number Interval distance between function executions
+---@param delta number Delta time from render event (0 to 1 indicating time between ticks)
+---@param axis vector Optional axis filter vector to restrict effect to specific axes
 function spellib.trailEffect(func, projectile, distance, delta, axis)
 	axis = axis or vec(1,1,1)
 	local pos = projectile:getPos(delta)
@@ -57,6 +75,14 @@ function spellib.trailEffect(func, projectile, distance, delta, axis)
 	end
 end
 
+--- Creates a burst of particles with randomized velocities.
+---@param particleID string Particle type ID (default: "dust 1 1 1 1")
+---@param pos vector Position vector where particles spawn
+---@param count number Number of particles (default: 20)
+---@param maxSpeed number Maximum particle speed (default: 0.1)
+---@param color vector Optional particle color
+---@param lifetime number Particle lifetime in ticks (default: 20)
+---@param gravity number Particle gravity (default: 0.3)
 function spellib.puff(particleID, pos, count, maxSpeed, color, lifetime, gravity)
 	count = count or 20
 	maxSpeed = maxSpeed or .1
@@ -78,7 +104,14 @@ function spellib.puff(particleID, pos, count, maxSpeed, color, lifetime, gravity
 	end
 end
 
----------------------- models controls -----------------------------
+---------------------- Model Controls -----------------------------
+
+--- Creates a copy of a model in the world with specified transformation.
+---@param model model Model to copy
+---@param pos vector Position vector (default: player position)
+---@param rotvector Rotation vector (default: vec(0,0,0))
+---@param scale vector Scale vector (default: vec(1,1,1))
+---@return model model Copied model object
 function spellib.summon(model, pos, rot, scale)
     pos = pos or player:getPos()
     rot = rot or vec(0,0,0)
@@ -87,6 +120,12 @@ function spellib.summon(model, pos, rot, scale)
 	return copy
 end
 
+--- Moves a model smoothly over time.
+---@param model model Model to move
+---@param offset number Movement offset vector
+---@param time number Duration in ticks
+---@param delta number Optional delta time
+---@return model model The model object
 function spellib.move(model, offset, time, delta)
     delta = delta or 0
     table.insert(movings,
@@ -99,6 +138,12 @@ function spellib.move(model, offset, time, delta)
     return model
 end
 
+--- Scales a model smoothly over time.
+---@param model model Model to scale
+---@param offset vector Scale offset vector
+---@param time number Duration in ticks
+---@param delta number Optional delta time
+---@return model model The model object
 function spellib.scale(model, offset, time, delta)
     delta = delta or 0
     table.insert(scalings,
@@ -111,6 +156,12 @@ function spellib.scale(model, offset, time, delta)
     return model
 end
 
+--- Rotates a model smoothly over time.
+---@param model model Model to rotate
+---@param offset vector Rotation offset vector
+---@param time number Duration in ticks
+---@param delta number Optional delta time
+---@return model model The model object
 function spellib.rotate(model, offset, time, delta)
     delta = delta or 0
     table.insert(rotatings,
@@ -122,14 +173,21 @@ function spellib.rotate(model, offset, time, delta)
         } )
     return model
 end
----------------------- Other ---------------------------------------
+
+---------------------- Other Utilities ---------------------------------------
 
 local projectiles = spellcore.getProjectiles()
+
+--- Internal function to check if vanilla model should be hidden for an arrow/trident
 local function hide_vanilla_model(arrow)
     local uuid = arrow:getUUID()
     return projectiles[uuid] and hiddenSpells[projectiles[uuid]:getSpellName()]
 end
 
+--- Returns all effects from a potion entity.
+---@param potion_entity EntityAPI The potion entity
+---@param unified boolean If true, removes "long_" and "strong_" prefixes from effect names
+---@return table effects Table of potion effects
 function spellib.getPotionEffects(potion_entity, unified)
     local potion_contents = potion_entity:getNbt().Item.components['minecraft:potion_contents']
 	if potion_contents.custom_effects then
@@ -142,6 +200,10 @@ function spellib.getPotionEffects(potion_entity, unified)
 	end
 end
 
+--- Returns the primary effect from a potion entity.
+---@param potion_entity EntityAPI The potion entity
+---@param unified boolean If true, removes "long_" and "strong_" prefixes from effect names
+---@return string effect Potion effect ID string
 function spellib.getPotionEffect(potion_entity, unified)
     local potion_contents = potion_entity:getNbt().Item.components['minecraft:potion_contents']
 	if potion_contents.custom_effects then
@@ -153,7 +215,10 @@ function spellib.getPotionEffect(potion_entity, unified)
         return potion_contents.potion
 	end
 end
----------------------- Events --------------------------------------
+
+---------------------- Event Handlers --------------------------------------
+
+-- Clean up completed transformations every tick
 events.TICK:register(function(delta)
     local worldTime = world.getTime()
     for _, transformations in pairs({movings, rotatings, scalings}) do
@@ -165,6 +230,7 @@ events.TICK:register(function(delta)
     end
 end)
 
+-- Apply smooth transformations to models every frame
 local transform = {'setPos', 'setOffsetRot', 'setScale'}
 events.RENDER:register(function(delta)
     local worldTime = world.getTime(delta)
@@ -179,9 +245,12 @@ events.RENDER:register(function(delta)
     end
 end)
 
+-- Handle vanilla arrow model visibility
 events.ARROW_RENDER:register(function (_, arrow)
     return hide_vanilla_model(arrow)
 end)
+
+-- Handle vanilla trident model visibility
 events.TRIDENT_RENDER:register(function (_, trident)
     return hide_vanilla_model(trident)
 end)

@@ -109,7 +109,7 @@ end
 --- Creates a copy of a model in the world with specified transformation.
 ---@param model model Model to copy
 ---@param pos vector Position vector (default: player position)
----@param rotvector Rotation vector (default: vec(0,0,0))
+---@param rot vector Rotation vector (default: vec(0,0,0))
 ---@param scale vector Scale vector (default: vec(1,1,1))
 ---@return model model Copied model object
 function spellib.summon(model, pos, rot, scale)
@@ -256,3 +256,4 @@ events.TRIDENT_RENDER:register(function (_, trident)
 end)
 
 return spellib
+
